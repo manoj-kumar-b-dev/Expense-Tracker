@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans antialiased transition-colors duration-300;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer components {
+  /* Glassmorphism Styles Custom Utilities */
+  .glass-panel {
+    @apply bg-white/70 dark:bg-darkBg-card/60 backdrop-blur-md border border-gray-200/50 dark:border-gray-800/40 shadow-xl rounded-2xl;
+  }
+
+  .glass-card {
+    @apply bg-white/40 dark:bg-darkBg-card/45 backdrop-blur-sm border border-gray-200/30 dark:border-gray-800/30 shadow-lg rounded-xl hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5;
+  }
+
+  .glass-modal {
+    @apply bg-white/90 dark:bg-darkBg-card/90 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-2xl rounded-2xl;
+  }
+
+  .glass-input {
+    @apply bg-white/50 dark:bg-darkBg-card/30 border border-gray-300/40 dark:border-gray-800/40 focus:border-primary focus:dark:border-primary-light focus:ring-1 focus:ring-primary focus:outline-none transition-all duration-200 rounded-xl px-4 py-2.5 w-full;
+  }
+}
+
+/* Glowing Backdrops */
+.glow-primary {
+  @apply absolute rounded-full bg-primary/20 blur-[120px] pointer-events-none;
+}
+
+.glow-success {
+  @apply absolute rounded-full bg-success/15 blur-[120px] pointer-events-none;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300/50 dark:bg-gray-700/50 rounded-full hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors;
+}
+
+/* Recharts Custom Styling rules */
+.recharts-default-tooltip {
+  @apply !bg-white/95 dark:!bg-darkBg-card/95 !border-gray-200/50 dark:!border-gray-800/50 !rounded-xl !shadow-xl !backdrop-blur-md !px-3 !py-2 !text-xs !font-medium !text-gray-700 dark:!text-gray-300 !important;
+}
+
+.recharts-tooltip-item-list {
+  @apply !space-y-1 !mt-1 !important;
+}
+
+/* Custom fade classes */
+.fade-in {
+  animation: fadeIn 0.3s ease-in forwards;
+}
+
+.slide-up {
+  animation: slideUp 0.4s ease-out forwards;
+}
