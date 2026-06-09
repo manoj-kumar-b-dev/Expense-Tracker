@@ -35,16 +35,29 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // 4. CORS configuration
-// Allow credentials (cookies) and configure React development server origins
-const corsOptions = {
-  origin: [
+// Allow credentials (cookies) and configure origins dynamically based on environment
+const allowedOrigins = [];
+
+if (process.env.FRONTEND_URL) {
+  // Support multiple comma-separated frontend URLs if needed
+  const origins = process.env.FRONTEND_URL.split(',').map(url => url.trim());
+  allowedOrigins.push(...origins);
+}
+
+// In development, also allow local React development server origins
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push(
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
     'http://localhost:5175',
     'http://127.0.0.1:5175'
-  ],
+  );
+}
+
+const corsOptions = {
+  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
