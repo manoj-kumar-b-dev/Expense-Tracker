@@ -7,11 +7,15 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { CurrencyProvider } from './context/CurrencyContext';
 import { Toaster } from 'react-hot-toast';
 
 import PageWrapper from './components/layout/PageWrapper';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './components/Auth/ForgotPassword';
+import ResetPassword from './components/Auth/ResetPassword';
+import VerifyEmail from './components/Auth/VerifyEmail';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
 import AddTransaction from './pages/AddTransaction';
@@ -19,6 +23,7 @@ import Analytics from './pages/Analytics';
 import Budget from './pages/Budget';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
+import RecurringManager from './pages/RecurringManager';
 import SkeletonTable from './components/ui/Skeleton';
 
 /**
@@ -74,7 +79,8 @@ export const App = () => {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <CurrencyProvider>
+          <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           {/* Custom style configuration for react-hot-toast */}
           <Toaster
             position="top-right"
@@ -119,6 +125,30 @@ export const App = () => {
               element={
                 <PublicRoute>
                   <Register />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                <PublicRoute>
+                  <ForgotPassword />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/reset-password/:resetToken"
+              element={
+                <PublicRoute>
+                  <ResetPassword />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/verify-email/:verificationToken"
+              element={
+                <PublicRoute>
+                  <VerifyEmail />
                 </PublicRoute>
               }
             />
@@ -180,11 +210,20 @@ export const App = () => {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/recurring"
+              element={
+                <ProtectedRoute>
+                  <RecurringManager />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Fallback redirects */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Router>
+        </CurrencyProvider>
       </AuthProvider>
     </ThemeProvider>
   );

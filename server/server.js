@@ -16,15 +16,22 @@ const connectDB = async () => {
 
 const authRoutes = require('./routes/authRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
+const exportRoutes = require('./routes/export');
 const budgetRoutes = require('./routes/budgetRoutes');
 const userRoutes = require('./routes/userRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const currencyRoutes = require('./routes/currency');
+const recurringRoutes = require('./routes/recurring');
 const { errorHandler } = require('./middleware/errorMiddleware');
 
 const app = express();
 
 // 1. Establish Database Connection
-connectDB();
+connectDB().then(() => {
+  // Initialize cron jobs after DB is connected
+  require('./cron/currencyRefresh')();
+  require('./cron/recurringTransactionJob')();
+});
 
 // 2. HTTP Security headers (Helmet)
 app.use(helmet());
@@ -57,7 +64,20 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const corsOptions = {
-  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+
+    const isAllowed = allowedOrigins.includes(origin);
+    // Dynamically allow Vercel deployments
+    const isVercel = origin.endsWith('.vercel.app');
+
+    if (isAllowed || isVercel) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -79,10 +99,13 @@ app.get('/api/health', (req, res) => {
 
 // 7. Mount Routers
 app.use('/api/auth', authRoutes);
+app.use('/api/transactions/export', exportRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/budgets', budgetRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/currency', currencyRoutes);
+app.use('/api/recurring', recurringRoutes);
 
 // 8. Catch-all for undefined route paths
 app.use('*', (req, res) => {

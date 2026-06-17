@@ -28,7 +28,7 @@ export const Profile = () => {
     defaultValues: {
       name: user?.name || '',
       email: user?.email || '',
-      currency: user?.currency || 'USD'
+      preferredCurrency: user?.preferredCurrency || user?.currency || 'USD'
     }
   });
 
@@ -37,6 +37,7 @@ export const Profile = () => {
     { code: 'EUR', name: 'Euro (€)' },
     { code: 'GBP', name: 'British Pound (£)' },
     { code: 'INR', name: 'Indian Rupee (₹)' },
+    { code: 'JPY', name: 'Japanese Yen (¥)' },
     { code: 'CAD', name: 'Canadian Dollar (C$)' },
     { code: 'AUD', name: 'Australian Dollar (A$)' }
   ];
@@ -190,7 +191,7 @@ export const Profile = () => {
                 </div>
                 <select
                   className="glass-input pl-11 text-sm bg-white dark:bg-darkBg-card dark:text-white"
-                  {...register('currency')}
+                  {...register('preferredCurrency')}
                 >
                   {currencies.map((curr) => (
                     <option key={curr.code} value={curr.code}>{curr.name}</option>

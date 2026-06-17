@@ -9,8 +9,7 @@ const {
   getTransactions,
   createTransaction,
   updateTransaction,
-  deleteTransaction,
-  exportTransactions
+  deleteTransaction
 } = require('../controllers/transactionController');
 const { protect } = require('../middleware/authMiddleware');
 const { validateResult } = require('../middleware/validateMiddleware');
@@ -52,8 +51,6 @@ router.use(protect);
 router.route('/')
   .get(getTransactions)
   .post(transactionValidation, createTransaction);
-
-router.get('/export/csv', exportTransactions);
 
 router.route('/:id')
   .put(transactionValidation, updateTransaction)

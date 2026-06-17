@@ -5,8 +5,9 @@
 
 import React from 'react';
 import { CategoryIconBadge } from '../../utils/categoryIcons';
-import { formatCurrency } from '../../utils/formatCurrency';
+import { formatAmount } from '../../utils/formatCurrency';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../hooks/useCurrency';
 import { Calendar, Trash2, Edit } from 'lucide-react';
 
 /**
@@ -19,8 +20,13 @@ export const TransactionCard = ({
   onDelete,
 }) => {
   const { user } = useAuth();
-  const activeCurrency = user?.currency || 'USD';
-  const { _id, type, amount, category, title, description, date } = transaction;
+  const { displayCurrency } = useCurrency();
+  const { _id, type, amount, originalAmount, originalCurrency, convertedAmount, category, title, description, date } = transaction;
+
+  const targetCurrency = displayCurrency || user?.preferredCurrency || user?.currency || 'USD';
+  const showConvertedAmount = convertedAmount !== undefined ? convertedAmount : amount;
+  const showOriginalAmount = originalAmount !== undefined ? originalAmount : amount;
+  const showOriginalCurrency = (originalCurrency || user?.preferredCurrency || user?.currency || 'USD').toUpperCase();
 
   const isIncome = type === 'income';
 
@@ -47,10 +53,15 @@ export const TransactionCard = ({
 
       {/* Right details: Amount and actions */}
       <div className="flex items-center gap-4 shrink-0">
-        <div className="text-right leading-none">
-          <span className={`text-base font-extrabold tracking-tight ${isIncome ? 'text-success' : 'text-danger'}`}>
-            {isIncome ? '+' : '-'}{formatCurrency(amount, activeCurrency)}
+        <div className="text-right leading-tight">
+          <span className={`text-base font-extrabold tracking-tight block ${isIncome ? 'text-success' : 'text-danger'}`}>
+            {isIncome ? '+' : '-'}{formatAmount(showConvertedAmount, targetCurrency)}
           </span>
+          {showOriginalCurrency !== targetCurrency && (
+            <span className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 leading-none mt-0.5">
+              {isIncome ? '+' : '-'}{formatAmount(showOriginalAmount, showOriginalCurrency)} {showOriginalCurrency}
+            </span>
+          )}
           <span className="block text-[9px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase mt-1">
             {category}
           </span>

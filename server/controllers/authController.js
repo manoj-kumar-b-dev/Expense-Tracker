@@ -5,6 +5,7 @@
 
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
+const { sendEmailVerification } = require('../utils/emailService');
 
 /**
  * Register a new user.
@@ -28,29 +29,49 @@ exports.register = async (req, res, next) => {
       });
     }
 
-    // Create user record
-    const user = await User.create({
+    // Instantiate user record
+    const user = new User({
       name,
       email,
       password,
       currency: currency || 'USD',
+      preferredCurrency: currency || 'USD',
       avatar: '',
     });
 
-    // Generate JWT token & set cookie
-    const token = generateToken(res, user._id);
+    // In development, auto-verify so SMTP is not required to log in
+    if (process.env.NODE_ENV !== 'production') {
+      user.isEmailVerified = true;
+      await user.save();
+      return res.status(201).json({
+        success: true,
+        message: 'Registration successful! You can now log in.',
+      });
+    }
+
+    // Generate email verification token
+    const verificationToken = user.getEmailVerificationToken();
+
+    // Save user record
+    await user.save();
+
+    // Dispatch verification email
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const verificationUrl = `${frontendUrl}/verify-email/${verificationToken}`;
+
+    let emailSent = true;
+    try {
+      await sendEmailVerification(user.email, verificationUrl);
+    } catch (mailError) {
+      console.error('Registration email dispatch failed:', mailError.message);
+      emailSent = false;
+    }
 
     return res.status(201).json({
       success: true,
-      message: 'Account registered successfully',
-      token,
-      data: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        currency: user.currency,
-        avatar: user.avatar,
-      },
+      message: emailSent
+        ? 'Registration successful! A verification link has been sent to your email.'
+        : 'Registration successful, but verification email could not be sent. Please try signing in to resend the link.',
     });
   } catch (error) {
     next(error);
@@ -88,6 +109,15 @@ exports.login = async (req, res, next) => {
       });
     }
 
+    // Guard: Ensure user has verified their email address
+    if (!user.isEmailVerified) {
+      return res.status(401).json({
+        success: false,
+        message: 'Please verify your email address before logging in.',
+        isEmailVerified: false,
+      });
+    }
+
     // Sign session
     const token = generateToken(res, user._id);
 
@@ -100,6 +130,7 @@ exports.login = async (req, res, next) => {
         name: user.name,
         email: user.email,
         currency: user.currency,
+        preferredCurrency: user.preferredCurrency || user.currency || 'USD',
         avatar: user.avatar,
       },
     });

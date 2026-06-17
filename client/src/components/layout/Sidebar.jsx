@@ -17,7 +17,8 @@ import {
   Settings,
   LogOut,
   Sun,
-  Moon
+  Moon,
+  Repeat2
 } from 'lucide-react';
 
 export const Sidebar = ({ isOpen, toggleSidebar }) => {
@@ -28,6 +29,7 @@ export const Sidebar = ({ isOpen, toggleSidebar }) => {
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Transactions', path: '/transactions', icon: ReceiptText },
     { name: 'Add Transaction', path: '/transactions/add', icon: PlusCircle },
+    { name: 'Recurring', path: '/recurring', icon: Repeat2 },
     { name: 'Analytics', path: '/analytics', icon: BarChart3 },
     { name: 'Budgets', path: '/budget', icon: PiggyBank },
     { name: 'Profile', path: '/profile', icon: User },

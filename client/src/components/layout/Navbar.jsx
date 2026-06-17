@@ -20,6 +20,7 @@ export const Navbar = ({ toggleSidebar }) => {
     if (path === '/transactions/add') return 'Add Transaction';
     if (path === '/analytics') return 'Analytics & Trends';
     if (path === '/budget') return 'Budget Controls';
+    if (path === '/recurring') return 'Recurring Rules';
     if (path === '/profile') return 'My Profile';
     if (path === '/settings') return 'Preferences & Settings';
     return 'Aura Wealth';

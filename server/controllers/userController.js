@@ -17,7 +17,7 @@ const Budget = require('../models/Budget');
  * @param {Function} next - Express next middleware.
  */
 exports.updateUserProfile = async (req, res, next) => {
-  const { name, email, currency } = req.body;
+  const { name, email, currency, preferredCurrency } = req.body;
 
   try {
     const user = await User.findById(req.user._id);
@@ -42,7 +42,15 @@ exports.updateUserProfile = async (req, res, next) => {
     }
 
     if (name) user.name = name;
-    if (currency) user.currency = currency;
+    
+    // Support both currency and preferredCurrency, keeping them in sync
+    if (preferredCurrency) {
+      user.preferredCurrency = preferredCurrency;
+      user.currency = preferredCurrency;
+    } else if (currency) {
+      user.preferredCurrency = currency;
+      user.currency = currency;
+    }
 
     await user.save();
 
@@ -54,6 +62,7 @@ exports.updateUserProfile = async (req, res, next) => {
         name: user.name,
         email: user.email,
         currency: user.currency,
+        preferredCurrency: user.preferredCurrency || user.currency,
         avatar: user.avatar,
       },
     });

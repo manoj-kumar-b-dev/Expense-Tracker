@@ -37,6 +37,14 @@ const TransactionSchema = new mongoose.Schema({
     required: [true, 'Please add a positive amount'],
     min: [0.01, 'Amount must be greater than zero'],
   },
+  originalAmount: {
+    type: Number,
+  },
+  originalCurrency: {
+    type: String,
+    uppercase: true,
+    trim: true,
+  },
   category: {
     type: String,
     required: [true, 'Please select a category'],
@@ -56,6 +64,13 @@ const TransactionSchema = new mongoose.Schema({
     trim: true,
     maxlength: [250, 'Description cannot exceed 250 characters'],
     default: '',
+  },
+  // Optional: links auto-generated transactions back to their recurring rule.
+  // Null for all manually created transactions (fully backward-compatible).
+  recurringId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'RecurringTransaction',
+    default: null,
   },
   date: {
     type: Date,

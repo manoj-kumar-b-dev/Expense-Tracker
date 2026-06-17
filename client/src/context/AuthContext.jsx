@@ -125,12 +125,17 @@ export const AuthProvider = ({ children }) => {
         payload: { user: data, token },
       });
       toast.success('Logged in successfully!');
-      return true;
+      return { success: true };
     } catch (err) {
       const message = err.response?.data?.message || 'Invalid credentials';
       dispatch({ type: 'AUTH_FAIL', payload: message });
+      
+      if (err.response?.data?.isEmailVerified === false) {
+        return { success: false, unverified: true, email: formData.email, message };
+      }
+      
       toast.error(message);
-      return false;
+      return { success: false, unverified: false, message };
     }
   };
 

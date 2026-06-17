@@ -37,16 +37,28 @@ api.interceptors.response.use(
   },
   (error) => {
     const originalRequest = error.config;
-    
-    // Auto logout and clear storage on 401 Unauthorized
-    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+
+    // Skip auto-logout for auth endpoints — they legitimately return 401
+    // (e.g. wrong password, unverified email). Let the caller handle those.
+    const isAuthEndpoint = originalRequest?.url?.includes('/auth/');
+
+    // Auto logout and clear storage on 401 Unauthorized (non-auth routes only)
+    if (
+      error.response &&
+      error.response.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthEndpoint
+    ) {
       console.warn('⚠️ Session expired or invalid. Logging out...');
-      
+
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      
+
       // Prevent infinite redirect loops
-      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+      if (
+        !window.location.pathname.includes('/login') &&
+        !window.location.pathname.includes('/register')
+      ) {
         toast.error('Session expired. Please log in again.');
         setTimeout(() => {
           window.location.href = '/login';

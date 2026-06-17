@@ -4,45 +4,75 @@
  */
 
 const Transaction = require('../models/Transaction');
+const currencyService = require('../services/currencyService');
+
+// Helper to accumulate converted and original amounts in a trend/monthly bucket
+const accumulateBucket = (bucket, type, trans, ratesData, targetCurrency, userPreferredCurrency) => {
+  const origAmount = trans.originalAmount !== undefined && trans.originalAmount !== null ? trans.originalAmount : trans.amount;
+  const origCurrency = (trans.originalCurrency || userPreferredCurrency || 'USD').toUpperCase();
+  
+  // Convert
+  let convertedAmount = origAmount;
+  if (ratesData && ratesData.rates) {
+    const fromRate = ratesData.rates[origCurrency];
+    if (fromRate) {
+      convertedAmount = Number((origAmount / fromRate).toFixed(2));
+    }
+  }
+
+  // Add converted
+  bucket[type] = Number((bucket[type] + convertedAmount).toFixed(2));
+
+  // Initialize original trackers if they don't exist
+  const origKey = `${type}Original`;
+  const currKey = `${type}OriginalCurrency`;
+  const listKey = `${type}OriginalList`; // to track unique currencies
+
+  if (bucket[origKey] === undefined) {
+    bucket[origKey] = 0;
+    bucket[listKey] = new Set();
+  }
+
+  bucket[origKey] = Number((bucket[origKey] + origAmount).toFixed(2));
+  bucket[listKey].add(origCurrency);
+
+  // Set original currency name
+  if (bucket[listKey].size === 1) {
+    bucket[currKey] = origCurrency;
+  } else {
+    bucket[currKey] = 'Mixed';
+  }
+};
 
 /**
  * Aggregates monthly income and expense totals for the past 6 months.
  * @route GET /api/analytics/monthly
  * @async
  * @function getMonthlyAnalytics
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware.
  */
 exports.getMonthlyAnalytics = async (req, res, next) => {
   try {
     const userId = req.user._id;
+    const userPreferredCurrency = req.user.preferredCurrency || req.user.currency || 'USD';
+    const displayCurrency = req.query.displayCurrency || userPreferredCurrency;
+
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
     sixMonthsAgo.setDate(1); // Set to start of month
     sixMonthsAgo.setHours(0, 0, 0, 0);
 
-    const monthlyStats = await Transaction.aggregate([
-      {
-        $match: {
-          userId,
-          date: { $gte: sixMonthsAgo },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$date' },
-            month: { $month: '$date' },
-            type: '$type',
-          },
-          totalAmount: { $sum: '$amount' },
-        },
-      },
-      {
-        $sort: { '_id.year': 1, '_id.month': 1 },
-      },
-    ]);
+    const transactions = await Transaction.find({
+      userId,
+      date: { $gte: sixMonthsAgo },
+    });
+
+    // Fetch exchange rates relative to display currency
+    let ratesData = null;
+    try {
+      ratesData = await currencyService.getRates(displayCurrency);
+    } catch (err) {
+      console.error('⚠️ Failed to load exchange rates for monthly analytics:', err.message);
+    }
 
     // Format results chronologically for recharts
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -63,13 +93,23 @@ exports.getMonthlyAnalytics = async (req, res, next) => {
       });
     }
 
-    monthlyStats.forEach((stat) => {
+    transactions.forEach((trans) => {
+      const transDate = new Date(trans.date);
+      const m = transDate.getMonth() + 1;
+      const y = transDate.getFullYear();
+
       const match = formattedData.find(
-        (fd) => fd.monthNum === stat._id.month && fd.year === stat._id.year
+        (fd) => fd.monthNum === m && fd.year === y
       );
       if (match) {
-        match[stat._id.type] = Math.round(stat.totalAmount * 100) / 100;
+        accumulateBucket(match, trans.type, trans, ratesData, displayCurrency, userPreferredCurrency);
       }
+    });
+
+    // Clean up temporary Sets used for unique currencies tracking before sending
+    formattedData.forEach((fd) => {
+      delete fd.incomeOriginalList;
+      delete fd.expenseOriginalList;
     });
 
     return res.status(200).json({
@@ -86,41 +126,68 @@ exports.getMonthlyAnalytics = async (req, res, next) => {
  * @route GET /api/analytics/category
  * @async
  * @function getCategoryAnalytics
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware.
  */
 exports.getCategoryAnalytics = async (req, res, next) => {
   try {
     const userId = req.user._id;
+    const userPreferredCurrency = req.user.preferredCurrency || req.user.currency || 'USD';
+    const displayCurrency = req.query.displayCurrency || userPreferredCurrency;
+
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const categoryStats = await Transaction.aggregate([
-      {
-        $match: {
-          userId,
-          type: 'expense',
-          date: { $gte: startOfMonth },
-        },
-      },
-      {
-        $group: {
-          _id: '$category',
-          value: { $sum: '$amount' },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          name: '$_id',
-          value: { $round: ['$value', 2] },
-        },
-      },
-      {
-        $sort: { value: -1 },
-      },
-    ]);
+    const transactions = await Transaction.find({
+      userId,
+      type: 'expense',
+      date: { $gte: startOfMonth },
+    });
+
+    // Fetch exchange rates relative to display currency
+    let ratesData = null;
+    try {
+      ratesData = await currencyService.getRates(displayCurrency);
+    } catch (err) {
+      console.error('⚠️ Failed to load exchange rates for category analytics:', err.message);
+    }
+
+    const categoryMap = {};
+    transactions.forEach((trans) => {
+      const origAmount = trans.originalAmount !== undefined && trans.originalAmount !== null ? trans.originalAmount : trans.amount;
+      const origCurrency = (trans.originalCurrency || userPreferredCurrency || 'USD').toUpperCase();
+      
+      // Convert
+      let convertedAmount = origAmount;
+      if (ratesData && ratesData.rates) {
+        const fromRate = ratesData.rates[origCurrency];
+        if (fromRate) {
+          convertedAmount = Number((origAmount / fromRate).toFixed(2));
+        }
+      }
+
+      const cat = trans.category;
+      if (!categoryMap[cat]) {
+        categoryMap[cat] = {
+          name: cat,
+          value: 0,
+          originalValue: 0,
+          currencies: new Set(),
+        };
+      }
+
+      categoryMap[cat].value = Number((categoryMap[cat].value + convertedAmount).toFixed(2));
+      categoryMap[cat].originalValue = Number((categoryMap[cat].originalValue + origAmount).toFixed(2));
+      categoryMap[cat].currencies.add(origCurrency);
+    });
+
+    const categoryStats = Object.keys(categoryMap).map(catKey => {
+      const cat = categoryMap[catKey];
+      return {
+        name: cat.name,
+        value: cat.value,
+        originalValue: cat.originalValue,
+        originalCurrency: cat.currencies.size === 1 ? [...cat.currencies][0] : 'Mixed',
+      };
+    }).sort((a, b) => b.value - a.value);
 
     return res.status(200).json({
       success: true,
@@ -136,37 +203,29 @@ exports.getCategoryAnalytics = async (req, res, next) => {
  * @route GET /api/analytics/trend
  * @async
  * @function getTrendAnalytics
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware.
  */
 exports.getTrendAnalytics = async (req, res, next) => {
   try {
     const userId = req.user._id;
+    const userPreferredCurrency = req.user.preferredCurrency || req.user.currency || 'USD';
+    const displayCurrency = req.query.displayCurrency || userPreferredCurrency;
+
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
     thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-    const trendStats = await Transaction.aggregate([
-      {
-        $match: {
-          userId,
-          date: { $gte: thirtyDaysAgo },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            dateStr: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-            type: '$type',
-          },
-          total: { $sum: '$amount' },
-        },
-      },
-      {
-        $sort: { '_id.dateStr': 1 },
-      },
-    ]);
+    const transactions = await Transaction.find({
+      userId,
+      date: { $gte: thirtyDaysAgo },
+    });
+
+    // Fetch exchange rates relative to display currency
+    let ratesData = null;
+    try {
+      ratesData = await currencyService.getRates(displayCurrency);
+    } catch (err) {
+      console.error('⚠️ Failed to load exchange rates for trend analytics:', err.message);
+    }
 
     // Build chronological days map
     const trendData = [];
@@ -185,14 +244,20 @@ exports.getTrendAnalytics = async (req, res, next) => {
       trendData.push(dateStr);
     }
 
-    trendStats.forEach((stat) => {
-      const dateKey = stat._id.dateStr;
+    transactions.forEach((trans) => {
+      const transDate = new Date(trans.date);
+      const dateKey = transDate.toISOString().split('T')[0];
       if (tempMap[dateKey]) {
-        tempMap[dateKey][stat._id.type] = Math.round(stat.total * 100) / 100;
+        accumulateBucket(tempMap[dateKey], trans.type, trans, ratesData, displayCurrency, userPreferredCurrency);
       }
     });
 
-    const finalTrend = trendData.map((dStr) => tempMap[dStr]);
+    const finalTrend = trendData.map((dStr) => {
+      const item = tempMap[dStr];
+      delete item.incomeOriginalList;
+      delete item.expenseOriginalList;
+      return item;
+    });
 
     return res.status(200).json({
       success: true,

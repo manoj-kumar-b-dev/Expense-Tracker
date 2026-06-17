@@ -5,6 +5,29 @@
 
 const Transaction = require('../models/Transaction');
 const { exportTransactionsToCSV } = require('../utils/csvExporter');
+const currencyService = require('../services/currencyService');
+
+const getTransactionWithConversion = (trans, ratesData, displayCurrency, userPreferredCurrency) => {
+  const origAmount = trans.originalAmount !== undefined && trans.originalAmount !== null ? trans.originalAmount : trans.amount;
+  const origCurrency = (trans.originalCurrency || userPreferredCurrency || 'USD').toUpperCase();
+  
+  let convertedAmount = origAmount;
+  if (ratesData && ratesData.rates) {
+    const fromRate = ratesData.rates[origCurrency];
+    if (fromRate) {
+      convertedAmount = Number((origAmount / fromRate).toFixed(2));
+    }
+  }
+
+  const transObj = trans.toObject ? trans.toObject() : trans;
+  return {
+    ...transObj,
+    originalAmount: origAmount,
+    originalCurrency: origCurrency,
+    convertedAmount,
+    displayCurrency
+  };
+};
 
 /**
  * Get all transactions for the logged-in user with filtering, sorting, searching, and pagination.
@@ -18,7 +41,7 @@ const { exportTransactionsToCSV } = require('../utils/csvExporter');
 exports.getTransactions = async (req, res, next) => {
   try {
     const query = { userId: req.user._id };
-    const { search, type, category, startDate, endDate, sort, page = 1, limit = 10 } = req.query;
+    const { search, type, category, startDate, endDate, sort, page = 1, limit = 10, displayCurrency } = req.query;
 
     // 1. Text Search matching title or description
     if (search) {
@@ -70,24 +93,43 @@ exports.getTransactions = async (req, res, next) => {
       Transaction.countDocuments(query)
     ]);
 
+    const userPreferredCurrency = req.user.preferredCurrency || req.user.currency || 'USD';
+    const cleanDisplayCurrency = (displayCurrency || userPreferredCurrency).toUpperCase();
+
+    // Fetch currency rates relative to display currency
+    let ratesData = null;
+    try {
+      ratesData = await currencyService.getRates(cleanDisplayCurrency);
+    } catch (err) {
+      console.error('⚠️ Failed to load exchange rates for transactions retrieval:', err.message);
+    }
+
+    // Convert paginated transaction list
+    const convertedTransactions = transactions.map(t =>
+      getTransactionWithConversion(t, ratesData, cleanDisplayCurrency, userPreferredCurrency)
+    );
+
     // Calculate totals for income/expense matching this query
     const totalTransactionsQuery = await Transaction.find({ userId: req.user._id });
     const balanceStats = totalTransactionsQuery.reduce(
       (acc, curr) => {
+        const converted = getTransactionWithConversion(curr, ratesData, cleanDisplayCurrency, userPreferredCurrency);
         if (curr.type === 'income') {
-          acc.income += curr.amount;
+          acc.income += converted.convertedAmount;
         } else {
-          acc.expense += curr.amount;
+          acc.expense += converted.convertedAmount;
         }
         return acc;
       },
       { income: 0, expense: 0 }
     );
-    balanceStats.balance = balanceStats.income - balanceStats.expense;
+    balanceStats.income = Number(balanceStats.income.toFixed(2));
+    balanceStats.expense = Number(balanceStats.expense.toFixed(2));
+    balanceStats.balance = Number((balanceStats.income - balanceStats.expense).toFixed(2));
 
     return res.status(200).json({
       success: true,
-      count: transactions.length,
+      count: convertedTransactions.length,
       pagination: {
         total,
         page: pageNum,
@@ -95,7 +137,7 @@ exports.getTransactions = async (req, res, next) => {
         limit: limitNum,
       },
       stats: balanceStats,
-      data: transactions,
+      data: convertedTransactions,
     });
   } catch (error) {
     next(error);
@@ -113,12 +155,18 @@ exports.getTransactions = async (req, res, next) => {
  */
 exports.createTransaction = async (req, res, next) => {
   try {
-    const { type, amount, category, title, description, date } = req.body;
+    const { type, amount, category, title, description, date, originalAmount, originalCurrency } = req.body;
+
+    const userPreferredCurrency = req.user.preferredCurrency || req.user.currency || 'USD';
+    const finalOriginalAmount = originalAmount !== undefined ? originalAmount : amount;
+    const finalOriginalCurrency = (originalCurrency || userPreferredCurrency).toUpperCase();
 
     const transaction = await Transaction.create({
       userId: req.user._id,
       type,
-      amount,
+      amount: finalOriginalAmount, // Keep existing amount field as-is for backward compatibility
+      originalAmount: finalOriginalAmount,
+      originalCurrency: finalOriginalCurrency,
       category,
       title,
       description: description || '',
@@ -165,12 +213,20 @@ exports.updateTransaction = async (req, res, next) => {
 
     // Update keys
     const updateFields = {};
-    const allowedKeys = ['type', 'amount', 'category', 'title', 'description', 'date'];
+    const allowedKeys = ['type', 'amount', 'category', 'title', 'description', 'date', 'originalAmount', 'originalCurrency'];
     allowedKeys.forEach((key) => {
       if (req.body[key] !== undefined) {
         updateFields[key] = req.body[key];
       }
     });
+
+    // Sync amount and originalAmount if only one is updated
+    if (req.body.amount !== undefined && req.body.originalAmount === undefined) {
+      updateFields.originalAmount = req.body.amount;
+    }
+    if (req.body.originalAmount !== undefined && req.body.amount === undefined) {
+      updateFields.amount = req.body.originalAmount;
+    }
 
     transaction = await Transaction.findByIdAndUpdate(
       req.params.id,

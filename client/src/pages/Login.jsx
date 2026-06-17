@@ -7,14 +7,18 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, ArrowRight } from 'lucide-react';
+import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
+import api from '../api/axiosInstance';
 
 export const Login = () => {
   const { loginUser } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
 
   const {
     register,
@@ -29,10 +33,28 @@ export const Login = () => {
 
   const onSubmit = async (data) => {
     setLoading(true);
-    const success = await loginUser(data);
+    setUnverifiedEmail('');
+    setResendSuccess(false);
+
+    const result = await loginUser(data);
     setLoading(false);
-    if (success) {
+    
+    if (result === true || result?.success) {
       navigate('/dashboard');
+    } else if (result?.unverified) {
+      setUnverifiedEmail(result.email);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setResendLoading(true);
+    try {
+      await api.post('/auth/resend-verification', { email: unverifiedEmail });
+      setResendSuccess(true);
+    } catch (err) {
+      console.error('Failed to resend verification:', err);
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -87,6 +109,36 @@ export const Login = () => {
               }
             })}
           />
+
+          <div className="text-right">
+            <Link
+              to="/forgot-password"
+              className="text-xs font-semibold text-primary hover:text-primary-light transition-colors hover:underline"
+            >
+              Forgot Password?
+            </Link>
+          </div>
+
+          {unverifiedEmail && (
+            <div className="flex flex-col items-start gap-2.5 p-3.5 text-sm text-amber-200 bg-amber-950/40 border border-amber-500/20 rounded-xl text-left animate-scaleUp">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4.5 h-4.5 mt-0.5 shrink-0 text-amber-400" />
+                <span>Your email is not verified. Please verify it before logging in.</span>
+              </div>
+              {!resendSuccess ? (
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resendLoading}
+                  className="mt-1 text-xs text-primary hover:text-primary-light underline font-bold transition-all"
+                >
+                  {resendLoading ? 'Resending email...' : 'Resend verification email'}
+                </button>
+              ) : (
+                <span className="text-xs text-success font-bold mt-1">Verification link resent!</span>
+              )}
+            </div>
+          )}
 
           {/* Submit button */}
           <Button

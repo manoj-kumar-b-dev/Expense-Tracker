@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../hooks/useCurrency';
 
 /**
  * Animated counter that counts up to a target number on mount.
@@ -53,9 +54,11 @@ export const StatCard = ({
   icon: Icon,
   trend, // e.g., { type: 'up'|'down', value: '12.4%' }
   variant = 'primary', // 'primary' | 'success' | 'danger' | 'warning'
+  currency,
 }) => {
   const { user } = useAuth();
-  const activeCurrency = user?.currency || 'USD';
+  const { displayCurrency } = useCurrency();
+  const activeCurrency = currency || displayCurrency || user?.preferredCurrency || user?.currency || 'USD';
 
   const variants = {
     primary: 'border-l-4 border-primary bg-primary/5 dark:bg-primary/10 text-primary',
@@ -80,8 +83,11 @@ export const StatCard = ({
         <span className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
           {title}
         </span>
-        <h2 className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white tracking-tight leading-none">
+        <h2 className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white tracking-tight leading-none flex items-baseline gap-2">
           <AnimatedCounter target={value} currency={activeCurrency} />
+          <span className="text-xs font-bold text-gray-400 bg-gray-100 dark:bg-gray-800 dark:text-gray-500 px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+            {activeCurrency}
+          </span>
         </h2>
 
         {/* Optional Trend indicator */}

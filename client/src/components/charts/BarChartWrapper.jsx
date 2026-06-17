@@ -15,9 +15,50 @@ import {
   Legend
 } from 'recharts';
 import { useTheme } from '../../context/ThemeContext';
+import { useCurrency } from '../../hooks/useCurrency';
+import { formatAmount } from '../../utils/formatCurrency';
+
+const CustomTooltip = ({ active, payload, label, displayCurrency }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="glass-panel p-3 border border-gray-200/50 dark:border-gray-800/40 text-left space-y-1.5 shadow-xl bg-white/90 dark:bg-[#161C2A]/90 backdrop-blur-md rounded-xl">
+        <p className="text-xs font-black text-gray-850 dark:text-white mb-1">{label}</p>
+        {payload.map((item, index) => {
+          const { name, value, dataKey, payload: dataPayload } = item;
+          
+          let origStr = '';
+          if (dataKey === 'income' && dataPayload.incomeOriginal) {
+            const origCurr = dataPayload.incomeOriginalCurrency;
+            if (origCurr !== displayCurrency && origCurr !== 'Mixed') {
+              origStr = ` (${formatAmount(dataPayload.incomeOriginal, origCurr)})`;
+            } else if (origCurr === 'Mixed') {
+              origStr = ' (Mixed)';
+            }
+          } else if (dataKey === 'expense' && dataPayload.expenseOriginal) {
+            const origCurr = dataPayload.expenseOriginalCurrency;
+            if (origCurr !== displayCurrency && origCurr !== 'Mixed') {
+              origStr = ` (${formatAmount(dataPayload.expenseOriginal, origCurr)})`;
+            } else if (origCurr === 'Mixed') {
+              origStr = ' (Mixed)';
+            }
+          }
+
+          return (
+            <p key={index} className="text-xs font-bold leading-normal" style={{ color: item.color || item.fill }}>
+              {name}: <span className="font-extrabold">{formatAmount(value, displayCurrency)}</span>
+              {origStr && <span className="text-gray-400 dark:text-gray-500 font-medium block text-[10px] mt-0.5">{origStr}</span>}
+            </p>
+          );
+        })}
+      </div>
+    );
+  }
+  return null;
+};
 
 export const BarChartWrapper = ({ data }) => {
   const { isDarkMode } = useTheme();
+  const { displayCurrency } = useCurrency();
 
   // Dark/Light Theme dependent colors
   const strokeColor = isDarkMode ? '#242F41' : '#E2E8F0';
@@ -55,15 +96,16 @@ export const BarChartWrapper = ({ data }) => {
             axisLine={false}
             dx={-8}
             className="font-bold tracking-wide"
+            tickFormatter={(value) => {
+              const formatted = formatAmount(value, displayCurrency);
+              const symbolMatch = formatted.match(/^[^\d\s]+/);
+              const symbol = symbolMatch ? symbolMatch[0] : '';
+              return `${symbol}${value}`;
+            }}
           />
           <Tooltip
             cursor={{ fill: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
-            contentStyle={{
-              background: isDarkMode ? '#161C2A' : '#ffffff',
-              border: isDarkMode ? '1px solid #242F41' : '1px solid #E2E8F0',
-              borderRadius: '12px',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-            }}
+            content={<CustomTooltip displayCurrency={displayCurrency} />}
           />
           <Legend
             verticalAlign="top"

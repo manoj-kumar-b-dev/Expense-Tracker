@@ -1,14 +1,18 @@
 /**
  * @file AddTransaction.jsx
  * @description Guided multi-stage Wizard form to add new transaction records.
+ * Supports optional "Make this recurring" mode that creates a RecurringTransaction rule
+ * instead of a one-off Transaction document.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTransactions } from '../hooks/useTransactions';
+import { useRecurring } from '../hooks/useRecurring';
 import { getCategoryMeta } from '../utils/categoryIcons';
-import { formatCurrency } from '../utils/formatCurrency';
+import { formatAmount } from '../utils/formatCurrency';
 import { useAuth } from '../context/AuthContext';
+import { useCurrency } from '../hooks/useCurrency';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import {
@@ -19,12 +23,14 @@ import {
   TrendingDown,
   Calendar,
   Tag,
-  DollarSign
+  DollarSign,
+  Repeat2
 } from 'lucide-react';
 
 export const AddTransaction = () => {
   const navigate = useNavigate();
   const { addTransaction } = useTransactions();
+  const { createRule } = useRecurring();
   const { user } = useAuth();
   const activeCurrency = user?.currency || 'USD';
 
@@ -35,12 +41,27 @@ export const AddTransaction = () => {
   const [type, setType] = useState('expense'); // 'income' | 'expense'
   const [category, setCategory] = useState('');
   const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState('USD');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
+  // 3. Recurring mode state
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState('monthly');
+  const [recurringEndDate, setRecurringEndDate] = useState('');
+  const [noEndDate, setNoEndDate] = useState(true);
+
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState('');
+
+  const { convert } = useCurrency();
+
+  useEffect(() => {
+    if (user) {
+      setCurrency(user.preferredCurrency || user.currency || 'USD');
+    }
+  }, [user]);
 
   const CATEGORIES = ['Food', 'Transport', 'Shopping', 'Entertainment', 'Bills', 'Healthcare', 'Education', 'Salary', 'Freelance', 'Other'];
 
@@ -79,15 +100,34 @@ export const AddTransaction = () => {
     setLoading(true);
     setFormError('');
     try {
-      await addTransaction({
-        type,
-        category,
-        amount: parseFloat(amount),
-        title,
-        description,
-        date
-      });
-      navigate('/dashboard');
+      if (isRecurring) {
+        // Route to recurring rule creation
+        await createRule({
+          type,
+          category,
+          amount: parseFloat(amount),
+          currency,
+          title,
+          notes: description,
+          frequency: recurringFrequency,
+          startDate: date,
+          endDate: noEndDate ? null : (recurringEndDate || null),
+        });
+        navigate('/recurring');
+      } else {
+        // Standard one-off transaction
+        await addTransaction({
+          type,
+          category,
+          amount: parseFloat(amount),
+          originalAmount: parseFloat(amount),
+          originalCurrency: currency,
+          title,
+          description,
+          date
+        });
+        navigate('/dashboard');
+      }
     } catch (err) {
       setFormError(err.response?.data?.message || 'Failed to submit transaction');
     } finally {
@@ -215,15 +255,38 @@ export const AddTransaction = () => {
             </h3>
 
             <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Amount"
-                type="number"
-                step="0.01"
-                icon={DollarSign}
-                placeholder="0.00"
-                value={amount}
-                onChange={(e) => { setAmount(e.target.value); setFormError(''); }}
-              />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1.5 w-full col-span-1 text-left">
+                  <label className="block text-xs font-semibold tracking-wide text-gray-500 uppercase">
+                    Currency
+                  </label>
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="glass-input text-xs w-full h-[46px] bg-white dark:bg-darkBg-card dark:text-white"
+                  >
+                    {['USD', 'EUR', 'GBP', 'INR', 'JPY', 'AUD', 'CAD'].map((curr) => (
+                      <option key={curr} value={curr}>{curr}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <Input
+                    label="Amount"
+                    type="number"
+                    step="0.01"
+                    icon={DollarSign}
+                    placeholder="0.00"
+                    value={amount}
+                    onChange={(e) => { setAmount(e.target.value); setFormError(''); }}
+                  />
+                  {amount && parseFloat(amount) > 0 && currency !== (user?.preferredCurrency || user?.currency || 'USD') && (
+                    <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-1">
+                      ≈ {formatAmount(convert(parseFloat(amount), currency, user?.preferredCurrency || user?.currency || 'USD'), user?.preferredCurrency || user?.currency || 'USD')} {user?.preferredCurrency || user?.currency || 'USD'}
+                    </p>
+                  )}
+                </div>
+              </div>
 
               <Input
                 label="Date"
@@ -250,6 +313,92 @@ export const AddTransaction = () => {
               value={description}
               onChange={(e) => { setDescription(e.target.value); setFormError(''); }}
             />
+
+            {/* ── Recurring Toggle ── */}
+            <div
+              onClick={() => setIsRecurring((prev) => !prev)}
+              className={`cursor-pointer flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200 ${
+                isRecurring
+                  ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20'
+                  : 'border-gray-200/50 dark:border-gray-800/50 bg-white/30 dark:bg-darkBg-card/20 hover:border-primary/20'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className={`p-1.5 rounded-lg ${isRecurring ? 'bg-primary/10 text-primary dark:text-primary-light' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
+                  <Repeat2 className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <span className="block text-xs font-extrabold text-gray-800 dark:text-gray-200">Make this recurring</span>
+                  <span className="block text-[10px] font-semibold text-gray-400">Auto-insert on a schedule — daily, weekly, monthly, or yearly</span>
+                </div>
+              </div>
+              <div className={`w-10 h-5.5 rounded-full flex items-center p-0.5 transition-colors shrink-0 ${
+                isRecurring ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-700'
+              }`}>
+                <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                  isRecurring ? 'translate-x-[18px]' : 'translate-x-0'
+                }`} />
+              </div>
+            </div>
+
+            {/* ── Recurring Options (shown when toggle is ON) ── */}
+            {isRecurring && (
+              <div className="space-y-3 p-4 rounded-xl border border-primary/20 bg-primary/[0.02] dark:bg-primary/5 animate-fadeIn">
+                <p className="text-[11px] font-bold text-primary dark:text-primary-light uppercase tracking-wider">🔁 Recurring Configuration</p>
+
+                {/* Frequency */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold tracking-wide text-gray-500 uppercase">Frequency</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {['daily', 'weekly', 'monthly', 'yearly'].map((freq) => (
+                      <button
+                        key={freq}
+                        type="button"
+                        onClick={() => setRecurringFrequency(freq)}
+                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold capitalize transition-all duration-200 ${
+                          recurringFrequency === freq
+                            ? 'bg-primary/10 border-primary/40 text-primary dark:text-primary-light ring-1 ring-primary/20'
+                            : 'border-gray-200/50 dark:border-gray-800/50 text-gray-400 hover:border-primary/20'
+                        }`}
+                      >
+                        {freq}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* End Date */}
+                <div className="grid grid-cols-2 gap-3 items-end">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold tracking-wide text-gray-500 uppercase">End Date</label>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold text-gray-400">
+                        <input
+                          type="checkbox"
+                          checked={noEndDate}
+                          onChange={(e) => setNoEndDate(e.target.checked)}
+                          className="w-3 h-3 accent-primary cursor-pointer"
+                        />
+                        No end
+                      </label>
+                    </div>
+                    <input
+                      type="date"
+                      value={recurringEndDate}
+                      min={date}
+                      disabled={noEndDate}
+                      onChange={(e) => setRecurringEndDate(e.target.value)}
+                      className={`glass-input text-xs h-[38px] bg-white dark:bg-darkBg-card dark:text-white ${
+                        noEndDate ? 'opacity-40 cursor-not-allowed' : ''
+                      }`}
+                    />
+                  </div>
+                  <div className="text-[10px] font-semibold text-gray-400 pb-1 leading-tight">
+                    The date field above becomes the <span className="font-bold text-primary dark:text-primary-light">start date</span> for this rule
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -257,7 +406,7 @@ export const AddTransaction = () => {
         {step === 4 && (
           <div className="space-y-6 py-2 animate-fadeIn">
             <h3 className="text-base font-extrabold text-gray-850 dark:text-white text-center leading-none">
-              Confirm Transaction Summary
+              Confirm {isRecurring ? 'Recurring Rule' : 'Transaction'} Summary
             </h3>
             
             <div className="glass-card p-6 border border-gray-200/50 dark:border-gray-800/40 relative overflow-hidden text-left max-w-md mx-auto">
@@ -265,6 +414,14 @@ export const AddTransaction = () => {
               <div className={`absolute top-0 right-0 px-4 py-1 text-[10px] font-black uppercase tracking-wider rounded-bl-xl ${type === 'income' ? 'bg-success text-white' : 'bg-danger text-white'}`}>
                 {type}
               </div>
+
+              {/* Recurring badge */}
+              {isRecurring && (
+                <div className="mb-3 flex items-center gap-1.5 text-xs font-bold text-primary dark:text-primary-light bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-lg w-fit">
+                  <Repeat2 className="w-3.5 h-3.5" />
+                  <span>Recurring · {recurringFrequency.charAt(0).toUpperCase() + recurringFrequency.slice(1)}</span>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div className="text-left">
@@ -276,7 +433,7 @@ export const AddTransaction = () => {
                   <div>
                     <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">Amount</span>
                     <span className={`text-lg font-black tracking-tight ${type === 'income' ? 'text-success' : 'text-danger'}`}>
-                      {type === 'income' ? '+' : '-'}{formatCurrency(amount, activeCurrency)}
+                      {type === 'income' ? '+' : '-'}{formatAmount(parseFloat(amount), currency)}
                     </span>
                   </div>
                   <div>
@@ -287,10 +444,20 @@ export const AddTransaction = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">Date</span>
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                      {isRecurring ? 'Start Date' : 'Date'}
+                    </span>
                     <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{new Date(date).toLocaleDateString()}</span>
                   </div>
-                  {description && (
+                  {isRecurring && (
+                    <div>
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">Ends</span>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                        {noEndDate ? 'No end date' : (recurringEndDate ? new Date(recurringEndDate).toLocaleDateString() : 'No end date')}
+                      </span>
+                    </div>
+                  )}
+                  {!isRecurring && description && (
                     <div>
                       <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">Description</span>
                       <p className="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">{description}</p>
@@ -334,12 +501,14 @@ export const AddTransaction = () => {
           ) : (
             <Button
               type="button"
-              variant="success"
+              variant={isRecurring ? 'primary' : 'success'}
               onClick={handleSubmitTransaction}
               isLoading={loading}
             >
-              <Check className="w-4 h-4 shrink-0" />
-              <span>Register Transaction</span>
+              {isRecurring
+                ? <Repeat2 className="w-4 h-4 shrink-0" />
+                : <Check className="w-4 h-4 shrink-0" />}
+              <span>{isRecurring ? 'Create Recurring Rule' : 'Register Transaction'}</span>
             </Button>
           )}
         </div>

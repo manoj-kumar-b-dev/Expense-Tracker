@@ -6,8 +6,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useTransactions } from '../hooks/useTransactions';
 import { useDebounce } from '../hooks/useDebounce';
-import { formatCurrency } from '../utils/formatCurrency';
+import { formatAmount } from '../utils/formatCurrency';
 import { useAuth } from '../context/AuthContext';
+import { useCurrency } from '../hooks/useCurrency';
 import { useForm } from 'react-hook-form';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -15,6 +16,7 @@ import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { CategoryIconBadge } from '../utils/categoryIcons';
+import ExportButton from '../components/ExportButton';
 import {
   Search,
   Filter,
@@ -31,6 +33,7 @@ import {
 export const Transactions = () => {
   const { user } = useAuth();
   const activeCurrency = user?.currency || 'USD';
+  const { displayCurrency, convert } = useCurrency();
 
   const {
     transactions,
@@ -38,8 +41,7 @@ export const Transactions = () => {
     pagination,
     fetchTransactions,
     editTransaction,
-    removeTransaction,
-    exportCSV
+    removeTransaction
   } = useTransactions();
 
   // 1. Query filters state parameters
@@ -54,6 +56,14 @@ export const Transactions = () => {
   // Debounce search string input to avoid excess API requests
   const debouncedSearch = useDebounce(search, 400);
 
+  const currentFilters = useMemo(() => ({
+    startDate,
+    endDate,
+    type,
+    category,
+    currency: displayCurrency
+  }), [startDate, endDate, type, category, displayCurrency]);
+
   // 2. Inline Action portals modals states
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -65,8 +75,12 @@ export const Transactions = () => {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors }
   } = useForm();
+
+  const watchedAmount = watch('amount');
+  const watchedCurrency = watch('originalCurrency');
 
   // 4. Fetch records whenever states change
   useEffect(() => {
@@ -78,9 +92,10 @@ export const Transactions = () => {
       category,
       startDate,
       endDate,
-      sort
+      sort,
+      displayCurrency
     });
-  }, [page, debouncedSearch, type, category, startDate, endDate, sort, fetchTransactions]);
+  }, [page, debouncedSearch, type, category, startDate, endDate, sort, displayCurrency, fetchTransactions]);
 
   // Categories list options
   const CATEGORIES = ['Food', 'Transport', 'Shopping', 'Entertainment', 'Bills', 'Healthcare', 'Education', 'Salary', 'Freelance', 'Other'];
@@ -89,7 +104,8 @@ export const Transactions = () => {
   const handleOpenEdit = (transaction) => {
     setEditingItem(transaction);
     setValue('title', transaction.title);
-    setValue('amount', transaction.amount);
+    setValue('amount', transaction.originalAmount !== undefined ? transaction.originalAmount : transaction.amount);
+    setValue('originalCurrency', transaction.originalCurrency || user?.preferredCurrency || user?.currency || 'USD');
     setValue('type', transaction.type);
     setValue('category', transaction.category);
     setValue('description', transaction.description || '');
@@ -99,7 +115,13 @@ export const Transactions = () => {
 
   const onEditSubmit = async (data) => {
     try {
-      await editTransaction(editingItem._id, data);
+      const updateData = {
+        ...data,
+        originalAmount: parseFloat(data.amount),
+        amount: parseFloat(data.amount),
+        originalCurrency: data.originalCurrency,
+      };
+      await editTransaction(editingItem._id, updateData);
       setIsEditOpen(false);
     } catch (err) {
       console.error(err);
@@ -132,17 +154,8 @@ export const Transactions = () => {
     setPage(1);
   };
 
-  // CSV download click handler
-  const handleCSVDownload = () => {
-    exportCSV({
-      search: debouncedSearch,
-      type,
-      category,
-      startDate,
-      endDate,
-      sort
-    });
-  };
+  // CSV download click handler has been upgraded to ExportButton
+
 
   return (
     <div className="space-y-6 md:space-y-8 animate-fadeIn">
@@ -157,16 +170,12 @@ export const Transactions = () => {
           </p>
         </div>
 
-        {/* CSV export controls */}
+        {/* Export controls */}
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            className="w-full sm:w-auto"
-            onClick={handleCSVDownload}
-          >
-            <Download className="w-4 h-4 shrink-0" />
-            <span>Export CSV</span>
-          </Button>
+          <ExportButton
+            filters={currentFilters}
+            disabled={transactions.length === 0 || loading}
+          />
         </div>
       </div>
 
@@ -309,10 +318,15 @@ export const Transactions = () => {
                   </div>
 
                   <div className="flex items-center gap-4 shrink-0">
-                    <div className="text-right leading-none">
-                      <span className={`text-base font-extrabold tracking-tight ${trans.type === 'income' ? 'text-success' : 'text-danger'}`}>
-                        {trans.type === 'income' ? '+' : '-'}{formatCurrency(trans.amount, activeCurrency)}
+                    <div className="text-right leading-tight">
+                      <span className={`text-base font-extrabold tracking-tight block ${trans.type === 'income' ? 'text-success' : 'text-danger'}`}>
+                        {trans.type === 'income' ? '+' : '-'}{formatAmount(trans.convertedAmount !== undefined ? trans.convertedAmount : trans.amount, displayCurrency || activeCurrency)}
                       </span>
+                      {trans.originalCurrency && trans.originalCurrency.toUpperCase() !== (displayCurrency || activeCurrency).toUpperCase() && (
+                        <span className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 leading-none mt-0.5">
+                          {trans.type === 'income' ? '+' : '-'}{formatAmount(trans.originalAmount !== undefined ? trans.originalAmount : trans.amount, trans.originalCurrency)} {trans.originalCurrency}
+                        </span>
+                      )}
                       <span className="block text-[9px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase mt-1">
                         {trans.category}
                       </span>
@@ -386,16 +400,34 @@ export const Transactions = () => {
           />
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Amount"
-              type="number"
-              step="0.01"
-              error={errors.amount?.message}
-              {...register('amount', {
-                required: 'Amount is required',
-                min: { value: 0.01, message: 'Amount must be greater than zero' }
-              })}
-            />
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1.5 w-full col-span-1">
+                <label className="block text-xs font-semibold tracking-wide text-gray-500 uppercase">
+                  Currency
+                </label>
+                <select
+                  className="glass-input text-xs w-full h-[46px] bg-white dark:bg-darkBg-card dark:text-white"
+                  {...register('originalCurrency')}
+                >
+                  {['USD', 'EUR', 'GBP', 'INR', 'JPY', 'AUD', 'CAD'].map((curr) => (
+                    <option key={curr} value={curr}>{curr}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-span-2">
+                <Input
+                  label="Amount"
+                  type="number"
+                  step="0.01"
+                  error={errors.amount?.message}
+                  {...register('amount', {
+                    required: 'Amount is required',
+                    min: { value: 0.01, message: 'Amount must be greater than zero' }
+                  })}
+                />
+              </div>
+            </div>
 
             <div className="space-y-1.5 w-full">
               <label className="block text-xs font-semibold tracking-wide text-gray-500 uppercase">
@@ -410,6 +442,13 @@ export const Transactions = () => {
               </select>
             </div>
           </div>
+
+          {/* Live Preview */}
+          {watchedAmount && parseFloat(watchedAmount) > 0 && watchedCurrency !== (user?.preferredCurrency || user?.currency || 'USD') && (
+            <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-1">
+              ≈ {formatAmount(convert(parseFloat(watchedAmount), watchedCurrency, user?.preferredCurrency || user?.currency || 'USD'), user?.preferredCurrency || user?.currency || 'USD')} {user?.preferredCurrency || user?.currency || 'USD'}
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5 w-full">
