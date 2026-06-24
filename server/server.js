@@ -98,6 +98,9 @@ app.get('/api/health', (req, res) => {
 });
 
 // 7. Mount Routers
+app.get("/api/expense",(res,req)=>{
+  res.status(200).send("ok")
+})
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions/export', exportRoutes);
 app.use('/api/transactions', transactionRoutes);
