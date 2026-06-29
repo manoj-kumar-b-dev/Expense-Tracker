@@ -1,0 +1,44 @@
+# Vercel Ignore File
+# Files and directories that should NOT be uploaded to Vercel
+
+# Node modules (Vercel installs them from package.json)
+node_modules
+
+# Environment files (use Vercel dashboard for environment variables)
+.env
+.env.local
+.env.*.local
+
+# Development files
+nodemon.json
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Git files
+.git
+.gitignore
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Test files (if any)
+tests
+__tests__
+*.test.js
+*.spec.js
+
+# Documentation
+README.md
+docs
+
+# Scripts that aren't needed in production
+scripts
+
+# Original cron files (replaced by api/cron endpoints)
+cron

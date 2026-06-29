@@ -5,15 +5,23 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "vercel-build": "echo 'Building for Vercel...'",
+    "test:cron:currency": "node -e \"require('./api/cron/currency-refresh')({headers:{}},{status:()=>({json:console.log})})\"",
+    "test:cron:recurring": "node -e \"require('./api/cron/recurring-transactions')({headers:{}},{status:()=>({json:console.log})})\""
   },
   "keywords": [
     "mern",
     "expense-tracker",
-    "fintech"
+    "fintech",
+    "vercel",
+    "serverless"
   ],
   "author": "Antigravity Senior Full-Stack Engineer",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.x"
+  },
   "dependencies": {
     "axios": "^1.17.0",
     "bcryptjs": "^2.4.3",

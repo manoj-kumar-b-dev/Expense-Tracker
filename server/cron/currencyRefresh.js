@@ -48,7 +48,9 @@ const checkAndFetchOnStart = async () => {
       console.log(`✅ Cached currency rates from ${rates.fetchedAt} are still valid. Next scheduled refresh at midnight UTC.`);
     }
   } catch (err) {
-    console.error('❌ Startup verification/refresh of currency rates failed:', err.message);
+    // Non-fatal: log the error but NEVER crash the server on startup
+    console.error('❌ Startup verification/refresh of currency rates failed (non-fatal):', err.message);
+    console.warn('⚠️ Server will continue without pre-cached currency rates. Rates will be fetched on first request.');
   }
 };
 

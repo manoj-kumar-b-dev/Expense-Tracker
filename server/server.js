@@ -1,6 +1,10 @@
 /**
  * @file server.js
  * @description Main entry point for MERN Expense Tracker server. Configures security, requests, database, routing tables, and server lifecycle.
+ * 
+ * This file now supports both traditional server deployment and Vercel serverless deployment.
+ * - For traditional deployment: Run directly with `node server.js` or `npm start`
+ * - For Vercel deployment: This app is exported and imported by api/index.js
  */
 
 require('dotenv').config();
@@ -8,11 +12,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-
-const connectDB = async () => {
-  const dbConnector = require('./config/db');
-  await dbConnector();
-};
 
 const authRoutes = require('./routes/authRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
@@ -26,22 +25,15 @@ const { errorHandler } = require('./middleware/errorMiddleware');
 
 const app = express();
 
-// 1. Establish Database Connection
-connectDB().then(() => {
-  // Initialize cron jobs after DB is connected
-  require('./cron/currencyRefresh')();
-  require('./cron/recurringTransactionJob')();
-});
-
-// 2. HTTP Security headers (Helmet)
+// 1. HTTP Security headers (Helmet)
 app.use(helmet());
 
-// 3. Logger (Morgan) in dev environment
+// 2. Logger (Morgan) in dev environment
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// 4. CORS configuration
+// 3. CORS configuration
 // Allow credentials (cookies) and configure origins dynamically based on environment
 const allowedOrigins = [];
 
@@ -84,23 +76,21 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// 5. JSON Body Parser (Increase limit for Base64 profile picture uploads)
+// 4. JSON Body Parser (Increase limit for Base64 profile picture uploads)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 6. Root status checking route
+// 5. Root status checking route
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Expense Tracker API is healthy and operational',
-    timestamp: new Date()
+    timestamp: new Date(),
+    environment: process.env.VERCEL ? 'vercel-serverless' : 'traditional'
   });
 });
 
-// 7. Mount Routers
-app.get("/api/expense",(res,req)=>{
-  res.status(200).send("ok")
-})
+// 6. Mount Routers
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions/export', exportRoutes);
 app.use('/api/transactions', transactionRoutes);
@@ -110,7 +100,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/currency', currencyRoutes);
 app.use('/api/recurring', recurringRoutes);
 
-// 8. Catch-all for undefined route paths
+// 7. Catch-all for undefined route paths
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
@@ -118,18 +108,37 @@ app.use('*', (req, res) => {
   });
 });
 
-// 9. Global Error Handling Middleware
+// 8. Global Error Handling Middleware
 app.use(errorHandler);
 
-// 10. Start Server
-const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Expense Tracker Server active in [${process.env.NODE_ENV || 'development'}] mode on port ${PORT}`);
-});
+// 9. Export app for serverless deployment (Vercel)
+module.exports = app;
 
-// Handle unhandled promise rejections gracefully
-process.on('unhandledRejection', (err) => {
-  console.error(`💥 Unhandled Promise Rejection: ${err.message}`);
-  // Close server & exit process
-  server.close(() => process.exit(1));
-});
+// 10. Traditional Server Start (only when not in serverless environment)
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  const connectDB = require('./config/db');
+  
+  const PORT = process.env.PORT || 5000;
+  
+  // Establish Database Connection
+  connectDB().then(() => {
+    // Initialize cron jobs after DB is connected (traditional deployment only)
+    require('./cron/currencyRefresh')();
+    require('./cron/recurringTransactionJob')();
+    
+    // Start the server
+    const server = app.listen(PORT, () => {
+      console.log(`🚀 Expense Tracker Server active in [${process.env.NODE_ENV || 'development'}] mode on port ${PORT}`);
+    });
+
+    // Handle unhandled promise rejections gracefully
+    process.on('unhandledRejection', (err) => {
+      console.error(`💥 Unhandled Promise Rejection: ${err.message}`);
+      // Close server & exit process
+      server.close(() => process.exit(1));
+    });
+  }).catch((err) => {
+    console.error(`💥 Failed to start server: ${err.message}`);
+    process.exit(1);
+  });
+}

@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "name": "expense-tracker-api",
+  "builds": [
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/cron/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/cron/(.*)",
+      "dest": "/api/cron/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "crons": [
+    {
+      "path": "/api/cron/currency-refresh",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/recurring-transactions",
+      "schedule": "5 0 * * *"
+    }
+  ],
+  "functions": {
+    "api/**/*.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  },
+  "regions": [
+    "iad1"
+  ]
+}
