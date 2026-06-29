@@ -1,16 +1,6 @@
 {
   "version": 2,
   "name": "expense-tracker-api",
-  "builds": [
-    {
-      "src": "api/index.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/cron/*.js",
-      "use": "@vercel/node"
-    }
-  ],
   "routes": [
     {
       "src": "/api/cron/(.*)",
